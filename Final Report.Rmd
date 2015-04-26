@@ -1,0 +1,154 @@
+---
+title: "Machine Learning Project"
+author: "Jon Juneau"
+date: "April 26, 2015"
+output: html_document
+---
+
+```{r echo=FALSE}
+# Setup the folder system for the peer assessment project for the Practical
+# Machine Learning Coursera course taught by John Hopkins faculty during April # 2015.
+
+projectPath <- "~/Documents/Data Science/Practical Machine Learning/ML Coursera"
+CODE_Path <- paste0(projectPath,"/CODE/Final Code")
+DATA_Path <- paste0(projectPath,"/DATA")
+
+setwd(CODE_Path)
+```
+
+#  Problem Description
+
+##      Given:
+Sensors located at waist (belt), theigh (dumbbell), upper arm (arm), wrist (forearm).
+
+Specifications of classe:
+
+* A is exactly according to specification
+* B is throwing elbows in front
+* C is lifting dumbell only half way
+* D is lowering dumbell only halfway
+* E is throwing hips to the front.
+
+"The data was collected on six male participants, aged from 20-28 years, with little weight lifting experience, lifting a light dumbbell (1.25 kg)"
+The participants "were asked to perform 10 repititions of the Unilaterial Dumbbell Biceps Curl in each of the five fashions" The classe variable represents the different fashions.
+
+##      Required:
+
+The goal is to be able to determine which classe of performance happened based upon the movement data from the sensors.
+
+##      More Information:
+
+The data for this project is from http://groupware.les.inf.puc-rio.br/har
+
+The citation for this is:
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3TMZLrW00
+
+#  Obtain the Data and Load the required R Libraries
+
+```{r}
+URL_data <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+
+data_Location <- paste(DATA_Path,"/DATA.csv",sep="")
+
+if (!file.exists(data_Location)) {
+     download.file(URL_data, destfile = data_Location, method="curl")
+}
+
+raw_data <- read.csv(data_Location)
+```
+
+Need the caret library for the learning methods.  Need the randomForest library since using the random forest technique.
+
+```{r echo=FALSE, message=FALSE}
+#       Load required libraries
+library(caret)
+library(randomForest)
+```
+
+#  Explore the Data Structure
+
+The raw data has `r dim(raw_data)[2]` variables and `r dim(raw_data)[1]` data records.
+
+### The Variable in the raw data:
+```{r echo=FALSE}
+names(raw_data)
+```
+
+Some Conclusions from the data:
+
+1. Some of the variables appear to be summary variables.  The summaries are when the new_window variable is equal to yes.  So, want to filter out the rows where the value of new_window is equal to yes. (newWindow <- raw_data$new_window == 'yes')
+
+2. Want to also remove the variables that have all NA values when the new_window value is equal to no.  These appear to be only summaries of the real measured data. (unique(colSums(is.na(raw_data[!newWindow,])))
+)
+
+
+#  Create a "Clean" Data set
+
+```{r}
+newWindow <- raw_data$new_window == 'yes'
+tempData <- raw_data[!newWindow,]
+goodCols <- colSums(is.na(tempData)) == 0
+tempData <- tempData[,goodCols]
+```
+
+Then the variables with near Zero Variance were removed.
+
+```{r}
+nzv <- nearZeroVar(tempData)
+Clean_data <- tempData[,-nzv]
+names(Clean_data)
+```
+
+#  Create the Training and Testing Data Sets
+
+##      Data splitting into Training and Testing data sets.
+
+```{r}
+inTrain <- createDataPartition(y=Clean_data$classe,p=0.75,list=FALSE)
+training <- Clean_data[inTrain,]
+testing <- Clean_data[-inTrain,]
+```
+
+The number of records in the training set is `r dim(training)[1]` and the number of records in the testing data set is `r dim(testing)[1]`.
+
+#  Learn the Random Forest Prediction Model
+
+The final data set has 60 variables.  The last one is the variable to predicted, so there are only 59 variables to choose the independent variables for the prediction function.  The first few variables were not used in the analysis because they do seem to be descriptive and not useful for prediction.  For example, the first is "X" which is the record number for the data.  If the records were in a different order, the predictions should not change.  The second variable "user_name" would only be appropriate if the predictions were for the same user.  The next two variables, "raw_timestamp_part_1" and "raw_timestamp_part_2" seem like they are summarized into the next variable, "cvtd_timestamp".
+
+```{r cache=TRUE}
+set.seed(647)
+
+RanTreeMod <- train(classe ~ ., data=training[,5:59],
+                      ntree = 3,
+                      method="rf",prox=TRUE)
+RanTreeMod
+```
+
+#  See how good the random forest does
+
+## How well does it predict on the records in the training set?
+
+```{r}
+#       How good on the training set?
+RanTreePred_train <- predict(RanTreeMod,training[,5:59])
+training$predRight <- RanTreePred_train == training$classe
+TrainConfusion <- confusionMatrix(table(RanTreePred_train,training$classe))
+TrainConfusion$table
+```
+
+## How well does it predict on the records in the test set?
+```{r}
+RanTreePred <- predict(RanTreeMod,testing[,5:59])
+testing$predRight <- RanTreePred == testing$classe
+TestConfusion <- confusionMatrix(table(RanTreePred,testing$classe))
+TestConfusion$table
+```
+
+## Expectation of Out of Sample Error
+
+The training set accuracy is `r TrainConfusion$overall['Accuracy']`
+The test set accuracy is `r TestConfusion$overall['Accuracy']`
+
+Since these are so close, I anticipate that the out of sample errors will be just as accurate as the test set accuracy.
